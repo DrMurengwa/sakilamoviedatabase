@@ -1,0 +1,191 @@
+#SET 1 QUESTION 1
+
+
+
+SELECT 
+	DISTINCT f.title film_title
+	, cat.name category
+	, COUNT (f.title) OVER (PARTITION BY f.title) AS rental_count
+FROM category cat
+JOIN film_category fc
+ON fc. category_id = cat.category_id
+JOIN film f
+ON f.film_id = fc.film_id
+JOIN inventory inv
+ON inv.film_id = f.film_id
+JOIN rental r
+ON r.inventory_id = inv.inventory_id
+WHERE cat.name = 'Animation' OR
+		cat.name = 'Children' OR
+		cat.name = 'Classics' OR
+		cat.name = 'Comedy' OR
+    		cat.name = 'Family' OR
+		cat.name = 'Music'
+GROUP BY 2,1
+ORDER BY 3
+LIMIT 10
+
+
+
+
+
+
+
+#SET 2 QUESTION 1
+
+
+SELECT DISTINCT 
+	EXTRACT(MONTH FROM r.rental_date) rental_month
+	, EXTRACT(YEAR FROM r.rental_date) rental_year
+	, s.store_id store_id
+	, COUNT(r.rental_id) OVER (PARTITION BY EXTRACT(MONTH FROM r.rental_date) 
+		ORDER BY s.store_id ) AS rental_count
+FROM rental r
+JOIN staff st
+ON r.staff_id = st.staff_id
+JOIN store s
+ON s.store_id = st.store_id
+GROUP BY 3,2,1,r.rental_id
+ORDER BY 1
+
+
+
+
+
+
+#SET 2 QUESTION 2
+
+
+
+WITH t1 AS (SELECT DISTINCT DATE_TRUNC('month',p.payment_date) pay_month
+		,CONCAT (c.first_name,' ',c.last_name) full_name
+		, COUNT (CONCAT (c.first_name,' ',c.last_name)) OVER 
+			(PARTITION BY CONCAT (c.first_name,' ',c.last_name) 		
+				ORDER BY DATE_TRUNC('month',p.payment_date))  	
+					AS paycount_per_month
+		, SUM(p.amount) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name) 
+			ORDER BY DATE_TRUNC('month',p.payment_date))  
+				AS pay_amt
+	FROM customer c
+	JOIN payment p
+	ON p.customer_id = c.customer_id
+	ORDER BY 2)
+
+
+SELECT 
+	pay_month, full_name
+	, paycount_per_month
+	, pay_amt
+	,SUM(pay_amt) OVER (PARTITION BY full_name ORDER BY full_name ) AS personal_sum
+FROM t1
+GROUP BY 2,1,3, t1.pay_amt
+ORDER BY 5 DESC
+LIMIT 10
+
+
+
+
+
+
+#SET 2 QUESTION 3a
+
+SELECT t2.pay_mon, t2.full_name, t2.paycount_per_month, t2.pay_amt
+	, SUM(t2.personal_sum) OVER (PARTITION BY t2.full_name ORDER BY t2.pay_mon) AS total_paid
+	, t2.lag, (t2.pay_amt- t2.lag) successive_diff_$
+FROM
+(SELECT pay_mon, full_name, paycount_per_month, pay_amt
+	,SUM(pay_amt) OVER (PARTITION BY full_name ORDER BY pay_mon ) AS personal_sum,
+LAG(pay_amt,1) OVER (PARTITION BY full_name ORDER BY pay_mon) AS lag
+FROM
+(SELECT DISTINCT DATE_TRUNC('month',p.payment_date) pay_mon,CONCAT (c.first_name,' ',c.last_name) full_name
+	, COUNT (CONCAT (c.first_name,' ',c.last_name)) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name) 
+		ORDER BY DATE_TRUNC('month',p.payment_date))  AS paycount_per_month
+	, SUM(p.amount) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name) 
+		ORDER BY DATE_TRUNC('month',p.payment_date))  AS pay_amt
+FROM customer c
+JOIN payment p
+ON p.customer_id = c.customer_id
+ORDER BY 2) t1)t2
+JOIN (SELECT 
+	DISTINCT full_name
+	, personal_sum
+FROM
+	(SELECT pay_mon
+		, full_name, paycount_per_month
+		, pay_amt
+		,SUM(pay_amt) OVER (PARTITION BY full_name ORDER BY full_name ) 
+			AS personal_sum
+	FROM
+		(SELECT 
+			DISTINCT DATE_TRUNC('month',p.payment_date) pay_mon
+			,CONCAT (c.first_name,' ',c.last_name) full_name
+			, COUNT (CONCAT (c.first_name,' ',c.last_name)) OVER 
+				(PARTITION BY CONCAT (c.first_name,' ',c.last_name) 
+					ORDER BY DATE_TRUNC('month',p.payment_date)) 
+						 AS paycount_per_month
+			, SUM(p.amount) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name)
+				 ORDER BY DATE_TRUNC('month',p.payment_date))  
+					AS pay_amt
+		FROM customer c
+		JOIN payment p
+		ON p.customer_id = c.customer_id
+		ORDER BY 2) t1
+		ORDER BY 5 DESC)t2
+		ORDER BY 2 DESC
+		LIMIT 10) t3
+ON t3.full_name = t2.full_name
+LIMIT 10
+
+
+
+
+
+
+
+
+
+#SET2 QUESTION 3b
+
+SELECT full_name, MAX(successive_diff_$)
+FROM
+(SELECT t2.pay_mon, t2.full_name, t2.paycount_per_month, t2.pay_amt, SUM(t2.personal_sum) OVER (PARTITION BY t2.full_name ORDER BY t2.pay_mon) AS total_paid, t2.lag, (t2.pay_amt- t2.lag) successive_diff_$
+FROM
+(SELECT pay_mon, full_name, paycount_per_month, pay_amt,SUM(pay_amt) OVER (PARTITION BY full_name ORDER BY pay_mon ) AS personal_sum,
+LAG(pay_amt,1) OVER (PARTITION BY full_name ORDER BY pay_mon) AS lag
+FROM
+(SELECT DISTINCT DATE_TRUNC('month',p.payment_date) pay_mon,CONCAT (c.first_name,' ',c.last_name) full_name, COUNT (CONCAT (c.first_name,' ',c.last_name)) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name) ORDER BY DATE_TRUNC('month',p.payment_date))  AS paycount_per_month, SUM(p.amount) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name) ORDER BY DATE_TRUNC('month',p.payment_date))  AS pay_amt
+FROM customer c
+JOIN payment p
+ON p.customer_id = c.customer_id
+ORDER BY 2) t1)t2
+JOIN (SELECT 
+	DISTINCT full_name
+	, personal_sum
+FROM
+	(SELECT pay_mon
+		, full_name, paycount_per_month
+		, pay_amt
+		,SUM(pay_amt) OVER (PARTITION BY full_name ORDER BY full_name ) 
+			AS personal_sum
+	FROM
+		(SELECT 
+			DISTINCT DATE_TRUNC('month',p.payment_date) pay_mon
+			,CONCAT (c.first_name,' ',c.last_name) full_name
+			, COUNT (CONCAT (c.first_name,' ',c.last_name)) OVER 
+				(PARTITION BY CONCAT (c.first_name,' ',c.last_name) 
+					ORDER BY DATE_TRUNC('month',p.payment_date)) 
+						 AS paycount_per_month
+			, SUM(p.amount) OVER (PARTITION BY CONCAT (c.first_name,' ',c.last_name)
+				 ORDER BY DATE_TRUNC('month',p.payment_date))  
+					AS pay_amt
+		FROM customer c
+		JOIN payment p
+		ON p.customer_id = c.customer_id
+		ORDER BY 2) t1
+		ORDER BY 5 DESC)t2
+		ORDER BY 2 DESC
+		LIMIT 10) t3
+ON t3.full_name = t2.full_name)t4
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 1
